@@ -71,7 +71,8 @@ I not checked how many entries could be used but the ESP32 is having a limited m
 
 ## Known issues
 
-Not all the time is connecting at first to the wifi but after a reset (switch button pressed one time) will work.
+- Not all the time is connecting at first to the wifi but after a reset (switch button pressed one time) will work.
+- If a thation is having a broken url the device will restart (solution in the chapter: Internal State)
 
 ## Prerequisites
 
@@ -79,13 +80,23 @@ To succesfuly compile the code you have to install two libraries:
 - [wm8978-esp32](https://github.com/CelliesProjects/wm8978-esp32) it will work from Arduino IDE with manage libraries
 - [ESP32-audioI2S](https://github.com/schreibfaul1/ESP32-audioI2S) you have to install manually and it needs some attention:
   - After extracting the zip file copy the folder into: ```<arduino data folder>/packages/esp32/hardware/esp32/1.0.4/libraries``` 
-  - Edit the file ``<arduino data folder>/packages/esp32/hardware/esp32/1.0.4/libraries//ESP-audioI2S-master/src/Audio.cpp``` and comment the line 134: ```clientsecure.setInsecure();```
+  - Edit the file ```<arduino data folder>/packages/esp32/hardware/esp32/1.0.4/libraries//ESP-audioI2S-master/src/Audio.cpp``` and comment the line 134: ```clientsecure.setInsecure();```
   
 ### arduino-esp32 version 1.0.5-rcX
 
 The ```Audio.cpp``` suggesting to you to install this release candidate version (this is why you need to comment out that line) but this version is having some problems:
 - ```esptool.py``` is not working with MacOS Big Sur (you can workarount that by replacing the os binary ```esptool``` with the provided ```esptool.py```, just edit the ```platform.txt``` file)
 - The compiled project will not work consistently because there is a wifi related bug and sometimes the button A (left) will receive the pushed event (many events)
+
+## Internal State
+
+There is some data that will be persisted into the SD card into a hidden file named ```.M5StackIR``` this will have the following entries:
+```
+stationIdx,isSpkMode,spkVolume,hpVolume[0],hpVolume[1]
+``` 
+More exactly: the current station, speaker or headphone mode, speaker volume, headphone left volume, headphone right volume
+
+If you have a broken station url the only solution to not having continuous reatarts is to edit ths file and set another station index!
 
 ## Challanges
 
