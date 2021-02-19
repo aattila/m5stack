@@ -102,7 +102,7 @@ If you have a broken station url the only solution to not having continuous reat
 
 There is a lot of more fun here by using the embedded:
 - infrared send and receive mechanism
-- DHT temperatire senzor
+- DHT temperature senzor
 - LED backplate
 
 In the feature releases I'll do something in that way but until that feel free and fork ;)
