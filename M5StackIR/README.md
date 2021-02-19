@@ -96,7 +96,7 @@ stationIdx,isSpkMode,spkVolume,hpVolume[0],hpVolume[1]
 ``` 
 More exactly: the current station, speaker or headphone mode, speaker volume, headphone left volume, headphone right volume
 
-If you have a broken station url the only solution to not having continuous reatarts is to edit ths file and set another station index!
+If you have a broken station url the only solution to not having continuous reatarts is to edit this file and set another station index!
 
 ## Challanges
 
