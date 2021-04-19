@@ -6,6 +6,12 @@
 #include <WM8978.h> /* https://github.com/CelliesProjects/wm8978-esp32 */
 #include <Audio.h>  /* https://github.com/schreibfaul1/ESP32-audioI2S */
 
+#include <NTPClient.h>
+#include <WiFiUdp.h>
+
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP,"nest", 3*3600, 60000);
+
 /* M5Stack Node WM8978 I2C pins */
 #define I2C_SDA     21
 #define I2C_SCL     22
@@ -35,6 +41,7 @@ int _spkVolume;
 int _hpVolume[2];
 unsigned long lastEnvRead;
 unsigned long saveCheck;
+unsigned long ntpUpdate;
 
 const char* fileState = "/.M5StackIR";
 const char* fileCfg = "/M5StackIR.cfg";
@@ -67,6 +74,7 @@ Station bkpStations[] = {
 void setup() {
 
   M5.begin();
+  M5.Lcd.setBrightness(20);
   M5.Power.begin();
   M5.Lcd.setTextDatum(TL_DATUM);
   M5.Lcd.setTextSize(1);
@@ -126,6 +134,8 @@ void setup() {
     M5.Lcd.drawString("Failed", 70, 70, 4);    
   }
   isPlaying = isWifi;
+
+  timeClient.begin();
   
   audio.setPinout(I2S_BCK, I2S_WS, I2S_DOUT, I2S_DIN);
   audio.i2s_mclk_pin_select(I2S_MCLKPIN);
@@ -138,6 +148,7 @@ void setup() {
 void loop() {
   
   if (M5.BtnA.wasPressed()) {
+    ntpUpdate = millis();
     if(isPlaying) {
       decVolume();
     } else {
@@ -153,6 +164,7 @@ void loop() {
       isLongPress = true;
     }
   } else if (M5.BtnB.wasReleased()) {
+      ntpUpdate = millis();
       if(isLongPress) {
         isLongPress = false;  
       } else {
@@ -163,11 +175,13 @@ void loop() {
           audio.stopSong();
           playStation();
         }
+        displayList();
         displayHeaders();
       }      
   }
   
   if (M5.BtnC.wasPressed()) {
+    ntpUpdate = millis();
     if(isPlaying) {
       incVolume();
     } else {
@@ -195,6 +209,34 @@ void loop() {
     saveCheck = millis(); 
   }
 
+  // updating time from the NTP server
+  if (millis() > ntpUpdate + 30000) {
+    showTime();
+    ntpUpdate = millis(); 
+  }
+
+}
+
+void showTime() {
+  Serial.print("Time from NTP: ");
+  timeClient.update();
+  String ftime = timeClient.getFormattedTime();
+  Serial.println(ftime);
+
+  M5.Lcd.setTextColor(TFT_DARKGREY, TFT_BLACK);    
+  if(isPlaying) {
+    M5.Lcd.fillRect(0, 25, 320, 215, TFT_BLACK);
+    M5.Lcd.setTextDatum(CC_DATUM);
+    M5.Lcd.drawString(ftime.substring(0,5), 160, 90+25, 8);
+    M5.Lcd.setTextDatum(BC_DATUM);
+    M5.Lcd.setFreeFont(FSS12);
+    M5.Lcd.drawString(stations[stationIdx].name, 160, 230, GFXFF);
+  } else {
+    M5.Lcd.fillRect(0, 0, 320, 240, TFT_BLACK);
+    M5.Lcd.setTextDatum(CC_DATUM);
+    M5.Lcd.drawString(ftime.substring(0,5), 160, 120, 8);
+  }
+  M5.Lcd.setTextDatum(TL_DATUM);
 }
 
 void playStation() {
@@ -228,7 +270,7 @@ void displayList() {
       M5.Lcd.setTextColor(M5.Lcd.color565(70,70,70), TFT_BLACK);
     }
     
-    M5.Lcd.drawString(stations[i].name, 0, 44+(i-scrollOffset)*42, GFXFF);    
+    M5.Lcd.drawString(stations[i].name, 0, 44+(i-scrollOffset)*42, GFXFF);
   }
 
 }
@@ -332,6 +374,7 @@ void displayHeaders() {
   if(isPlaying) {
     M5.Lcd.fillRect(0, 0, 320, 25, M5.Lcd.color565(50,50,50));
     displayInfo();
+    M5.Lcd.fillRect(0, 210, 320, 5, TFT_BLACK);
     M5.Lcd.fillRect(0, 215, 320, 240, M5.Lcd.color565(50,50,50));
     displayVolume();
   } else {
