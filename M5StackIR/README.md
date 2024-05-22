@@ -51,12 +51,12 @@ In this mode the buttons are having the following functions:
 
 You have two possibilities to set stations and the connections to the WiFi network:
 - Use an SD card:
-  - create a file named ```M5StackIR.cfg```
+  - create a file named ```playlist.txt```
   - the first row must be the wifi credentials in the format: ```"username", "password"``` (the quotes are mandatory)
   - all the other rows must be in the format: ```"station name", "station url that points to a playeable stream"``` (the quotes are mandatory)
 - Set inline the relevant fields:
   - for the stations set or expand the field named ```bkpStations```
-  - for the WiFi set the ```WIFI_SSID``` and the ```WIFI_PASSWORD``` (those are set inside in the ```credentials.h`` based on the ide of [Andreas Spiess](https://www.sensorsiot.org) )
+  - for the WiFi set the ```WIFI_SSID``` and the ```WIFI_PASSWORD``` (those are set inside in the ```credentials.h`` based on the idea of [Andreas Spiess](https://www.sensorsiot.org) )
   
 A sample SD card config file could be like the following example:
 ```

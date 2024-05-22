@@ -6,11 +6,19 @@
 #include <WM8978.h> /* https://github.com/CelliesProjects/wm8978-esp32 */
 #include <Audio.h>  /* https://github.com/schreibfaul1/ESP32-audioI2S */
 
-#include <NTPClient.h>
+#include <NTPClient.h> /* https://github.com/arduino-libraries/NTPClient */
 #include <WiFiUdp.h>
 
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP,"nest", 3*3600, 60000);
+NTPClient timeClient(ntpUDP,"0.pool.ntp.org", 3*3600, 60000);
+
+#include "DHT12.h"
+DHT12 DHT;
+
+#include <Adafruit_NeoPixel.h>
+const uint16_t PixelCount = 12;
+const uint8_t PixelPin = 15;
+Adafruit_NeoPixel pixels(PixelCount, PixelPin, NEO_GRB + NEO_KHZ800);
 
 /* M5Stack Node WM8978 I2C pins */
 #define I2C_SDA     21
@@ -43,8 +51,12 @@ unsigned long lastEnvRead;
 unsigned long saveCheck;
 unsigned long ntpUpdate;
 
-const char* fileState = "/.M5StackIR";
-const char* fileCfg = "/M5StackIR.cfg";
+unsigned int red   = 255; 
+unsigned int green = 109;
+unsigned int blue  = 10;
+
+const char* fileState = "/config.txt";
+const char* fileCfg = "/playlist.txt";
 String cfg = "";
 
 typedef struct station {
@@ -73,23 +85,29 @@ Station bkpStations[] = {
 
 void setup() {
 
+  ntpUpdate = millis();
+ 
+  Serial.begin(115200);
+  Wire.begin();
+  DHT.begin();
+
   M5.begin();
   M5.Lcd.setBrightness(20);
   M5.Power.begin();
   M5.Lcd.setTextDatum(TL_DATUM);
   M5.Lcd.setTextSize(1);
   M5.Lcd.setTextColor(TFT_LIGHTGREY, TFT_BLACK);  
+  M5.Lcd.setRotation(3);
+
   delay(500);
+  
   M5.Lcd.drawString("DAC: ", 5, 10, 4);
-  if (!dac.begin(I2C_SDA, I2C_SCL)) {
-    while (1) delay(100);
-  }
   M5.Lcd.drawString("Success", 70, 10, 4);
 
-
-  delay(500);
+  delay(1000);
+  
   M5.Lcd.drawString("   SD: ", 5, 40, 4);
-  isSDCard = readCfg(SD, fileCfg);
+  isSDCard = readStations(SD, fileCfg);
   if(isSDCard) {
     M5.Lcd.drawString("Yes", 70, 40, 4);
     readState();
@@ -99,8 +117,16 @@ void setup() {
       stations[i] = bkpStations[i];
     }
   }
-  
+
+  pixels.begin();
+  pixels.clear();
+  for(int i=0; i<PixelCount; i++) {
+    pixels.setPixelColor(i, pixels.Color(red, green, blue));
+    pixels.show();
+  }
+
   delay(500);
+  
   M5.Lcd.drawString("WiFi: Connecting", 5, 70, 4);
   if(isSDCard) {
     String ssid = getValue(cfg, ',', 0, true);
@@ -136,18 +162,27 @@ void setup() {
   isPlaying = isWifi;
 
   timeClient.begin();
-  
-  audio.setPinout(I2S_BCK, I2S_WS, I2S_DOUT, I2S_DIN);
-  audio.i2s_mclk_pin_select(I2S_MCLKPIN);
-  
+
+  /* Setup wm8978 I2C interface */
+  if (!dac.begin(I2C_SDA, I2C_SCL)) {
+    log_e("Error setting up dac. System halted");
+    while (1) delay(100);
+  }
+  dac.setSPKvol(spkVolume);
+  dac.setHPvol(hpVolume[0], hpVolume[1]);
+
+  /* Setup wm8978 I2S interface */
+  audio.setPinout(I2S_BCK, I2S_WS, I2S_DOUT, I2S_MCLKPIN);
+
   displayList();
   displayHeaders();
   playStation();
 }
 
 void loop() {
-  
-  if (M5.BtnA.wasPressed()) {
+
+  if (M5.BtnC.wasPressed()) {
+    Serial.print("C pressed");
     ntpUpdate = millis();
     if(isPlaying) {
       decVolume();
@@ -163,6 +198,7 @@ void loop() {
       writeState();
       isLongPress = true;
     }
+    M5.update();
   } else if (M5.BtnB.wasReleased()) {
       ntpUpdate = millis();
       if(isLongPress) {
@@ -177,10 +213,11 @@ void loop() {
         }
         displayList();
         displayHeaders();
-      }      
+      }
   }
-  
-  if (M5.BtnC.wasPressed()) {
+
+  if (M5.BtnA.wasPressed()) {
+    Serial.print("A pressed");
     ntpUpdate = millis();
     if(isPlaying) {
       incVolume();
@@ -188,18 +225,25 @@ void loop() {
       nextStation();
     }
   }
-  
-  M5.update();
-  
+ 
   audio.loop(); 
 
-  // re-display the status info, especially for the buffer monitoring
-  if (millis() > lastEnvRead + 1000) {
-    if(audio.isRunning()) {
-        displayInfo();
-    }    
-    lastEnvRead = millis(); 
-  }
+  M5.update();
+
+  if(audio.isRunning()) {
+    // re-display the status info, especially for the buffer monitoring
+    if (millis() > lastEnvRead + 1000) {
+      lastEnvRead = millis(); 
+      displayInfo();
+    }
+  } else {
+    if (millis() > ntpUpdate + 30000) {
+      showTime();
+      ntpUpdate = millis(); 
+      readDHT();
+    }
+    delay(200);
+  }   
 
   // saving volume state
   if (millis() > saveCheck + 30000) {
@@ -208,13 +252,6 @@ void loop() {
     }
     saveCheck = millis(); 
   }
-
-  // updating time from the NTP server
-  if (millis() > ntpUpdate + 30000) {
-    showTime();
-    ntpUpdate = millis(); 
-  }
-
 }
 
 void showTime() {
@@ -385,7 +422,7 @@ void displayHeaders() {
   }
 }
 
-bool readCfg(fs::FS &fs, const char * path) {
+bool readStations(fs::FS &fs, const char * path) {
   Serial.printf("Reading file: %s\n", path);
 
   File file = fs.open(path);
@@ -469,6 +506,13 @@ bool readState() {
     _hpVolume[0] = hpVolume[0];
     _hpVolume[1] = hpVolume[1];
 
+    line = file.readStringUntil('\n');
+    Serial.println(line);
+    
+    red   = getValue(line, ',', 0, false).toInt();
+    green = getValue(line, ',', 1, false).toInt();
+    blue  = getValue(line, ',', 2, false).toInt();
+
   }
   file.close();
   return true;
@@ -478,10 +522,15 @@ void writeState() {
   
   Serial.printf("Writing file: %s\n", fileState);
   
-  String line = String(stationIdx) +","+ String(isSpkMode) +","+ String(spkVolume) +","+ String(hpVolume[0]) +","+ String(hpVolume[1]);
-  Serial.println(line);
-  char lineBuf[line.length()+1];
-  line.toCharArray(lineBuf, sizeof(lineBuf));
+  String line1 = String(stationIdx) +","+ String(isSpkMode) +","+ String(spkVolume) +","+ String(hpVolume[0]) +","+ String(hpVolume[1]);
+  Serial.println(line1);
+  char line1Buf[line1.length()+1];
+  line1.toCharArray(line1Buf, sizeof(line1Buf));
+
+  String line2 = String(red)+","+String(green)+","+String(blue);
+  Serial.println(line2);
+  char line2Buf[line2.length()+1];
+  line2.toCharArray(line2Buf, sizeof(line2Buf));
 
   File file = SD.open(fileState, FILE_WRITE);
   if(!file) {
@@ -489,7 +538,8 @@ void writeState() {
     return;
   }
   file.seek(0);
-  file.println(lineBuf);
+  file.println(line1Buf);
+  file.println(line2Buf);
   file.close();
 
   _spkVolume = spkVolume;
@@ -497,3 +547,31 @@ void writeState() {
   _hpVolume[1] = hpVolume[1];
 
 }
+
+void readDHT() {
+    Serial.print("DHT12, \t");
+    int status = DHT.read();
+    switch (status)
+    {
+    case DHT12_OK:
+      Serial.print("OK,\t");
+      break;
+    case DHT12_ERROR_CHECKSUM:
+      Serial.print("Checksum error,\t");
+      break;
+    case DHT12_ERROR_CONNECT:
+      Serial.print("Connect error,\t");
+      break;
+    case DHT12_MISSING_BYTES:
+      Serial.print("Missing bytes,\t");
+      break;
+    default:
+      Serial.print("Unknown error,\t");
+      break;
+    }
+    //  DISPLAY DATA, sensor has only one decimal.
+    Serial.print(DHT.getHumidity(), 1);
+    Serial.print(",\t");
+    Serial.println(DHT.getTemperature(), 1);
+}
+
